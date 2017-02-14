@@ -2,6 +2,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <regex.h>
+#include <errno.h>
+
+#include "shared.h"
 
 size_t fsize(FILE *f) {
     fseek(f, 0L, SEEK_END);

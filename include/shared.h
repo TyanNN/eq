@@ -1,6 +1,8 @@
 #ifndef H_EQU_SHARED
 #define H_EQU_SHARED
 
+#include <stdbool.h>
+
 #define ANSI_COLOR_RED      "\x1b[31m"
 #define ANSI_COLOR_GREEN    "\x1b[32m"
 #define ANSI_COLOR_YELLOW   "\x1b[33m"
@@ -11,8 +13,9 @@
 #define ANSI_BOLD           "\033[1m"
 
 #ifdef PORTAGE_DIRS
-const char* PORTAGE_DB_DIR = "/var/db/pkg"; // no / is important in these two
+const char* PORTAGE_DB_DIR = "/var/db/pkg"; // no / is important in these
 const char* PORTAGE_EBUILDS_DIR = "/usr/portage";
+const char* LAYMAN_EBUILDS_DIR = "/var/lib/layman";
 #endif
 
 typedef struct {
@@ -20,6 +23,7 @@ typedef struct {
     char *version;
     char *category;
     char *repository;
+    bool installed;
 } package_info_t;
 
 package_info_t *PACKAGE;

@@ -3,6 +3,9 @@
 #include <string.h>
 #include <dirent.h>
 #include <libgen.h>
+#include <sys/ioctl.h>
+#include <unistd.h>
+#include <ctype.h>
 
 #include <glib.h>
 #include <libxml/parser.h>
@@ -11,8 +14,9 @@
 #include "utils.h"
 #include "shared.h"
 
-extern const char* PORTAGE_DB_DIR;
-extern const char* PORTAGE_EBUILDS_DIR;
+extern const char *PORTAGE_DB_DIR;
+extern const char *PORTAGE_EBUILDS_DIR;
+extern const char *LAYMAN_EBUILDS_DIR;
 
 GHashTable *ALL_USE;
 
@@ -58,41 +62,44 @@ int find_active_use(const void *el, const void *tofind) {
     }
 }
 
+// TODO: do something with use expand
 void parse_use() {
     ALL_USE = g_hash_table_new(g_str_hash, g_str_equal);
 
     GSList *active_use = NULL;
     GSList *active_iuse = NULL;
 
-    /* /usr/portage/profiles/use.desc
-     * /usr/portage/profiles/desc */
-
-    //Global use flags
+    //Global use flags descriptions
     parse_desc("/usr/portage/profiles/use.desc");
 
+    // Other descriptions
     DIR *desc_dir = opendir("/usr/portage/profiles/desc");
     struct dirent *el;
-
     while ((el = readdir(desc_dir)) != NULL) {
         char *fullpath = alloc_str("/usr/portage/profiles/desc/", el->d_name, NULL);
         parse_desc(fullpath);
         free(fullpath);
     }
 
+    char *dir;
     if (strcmp(PACKAGE->repository, "gentoo") == 0) {
+        dir = alloc_str(PORTAGE_EBUILDS_DIR, NULL); // From portage tree
+    } else {
+        dir = alloc_str(LAYMAN_EBUILDS_DIR, "/", PACKAGE->repository, NULL); // From overlay
+    }
 
-        // Per-package use flags
-        char *pth = alloc_str(PORTAGE_EBUILDS_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "/metadata.xml", NULL);
+    // Per-package use flags descriptions
+    char *pth = alloc_str(dir, "/", PACKAGE->category, "/", PACKAGE->name, "/metadata.xml", NULL);
+    xmlDocPtr doc;
 
-        xmlDocPtr doc = xmlParseFile(pth);
+    if (access(pth, F_OK) != -1) {
+        doc = xmlParseFile(pth);
+    }
 
-        free(pth);
+    free(pth);
+    free(dir);
 
-        if (doc == NULL) {
-            printf("No metadata.xml");
-            return;
-        }
-
+    if (PACKAGE->installed) {
         char *active_use_pth = alloc_str(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, "/USE", NULL);
         char *active_iuse_pth = alloc_str(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, "/IUSE", NULL);
 
@@ -124,10 +131,43 @@ void parse_use() {
             itoken = strtok(NULL, " ");
         }
         free(active_iuse_pth);
+    } else {
+        char *eb_path;
+        if (strcmp(PACKAGE->repository, "gentoo") == 0) {
+            eb_path = alloc_str(PORTAGE_EBUILDS_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "/", PACKAGE->name, "-", PACKAGE->version, ".ebuild", NULL);
+        }
+        FILE *eb_f = fopen(eb_path, "r");
+        size_t eb_fsize = fsize(eb_f);
+        char *eb_s = malloc(sizeof(char) * eb_fsize);
+        fread(eb_s, 1, eb_fsize, eb_f);
+        fclose(eb_f);
 
-        xmlXPathContextPtr context = xmlXPathNewContext(doc);
-        xmlXPathObjectPtr uses = xmlXPathEvalExpression((const xmlChar *)"/pkgmetadata/use/child::node()", context);
+        char *token = strstr(eb_s, "IUSE=");
+        while (token != NULL) {
+            char iuses[256];
+            sscanf(token + 5, "\"%[^\"]", iuses);
+            char *c;
+            while ((c = strchr(iuses, '\t')) != NULL) { // Because tabs, yeah
+                *c = ' ';
+            }
+            compress_spaces(iuses);
 
+            if (isalnum(iuses[0]) || iuses[0] == '+' || iuses[0] == '-') {
+                char *tt = strtok(iuses, " ");
+                while (tt != NULL) {
+                    active_iuse = g_slist_append(active_iuse, tt);
+                    tt = strtok(NULL, " ");
+                }
+            }
+
+            token = strstr(token + strlen(token), "IUSE");
+        }
+    }
+
+    xmlXPathContextPtr context = xmlXPathNewContext(doc);
+    xmlXPathObjectPtr uses = xmlXPathEvalExpression((const xmlChar *)"/pkgmetadata/use/child::node()", context);
+
+    if (!xmlXPathNodeSetIsEmpty(uses->nodesetval)) { // Has custom use flags
         for (int i = 0; i < uses->nodesetval->nodeNr; i++) {
             xmlNodePtr curr = uses->nodesetval->nodeTab[i];
             char *use_text = (char *)xmlNodeGetContent(curr);
@@ -144,17 +184,21 @@ void parse_use() {
 
             g_hash_table_insert(ALL_USE, use_flag, use_text);
         }
-
-        xmlXPathFreeContext(context);
-        xmlXPathFreeObject(uses);
-        xmlFreeDoc(doc);
     }
+
+    xmlXPathFreeContext(context);
+    xmlXPathFreeObject(uses);
+    xmlFreeDoc(doc);
+
+    printf("Use flags for " ANSI_BOLD ANSI_COLOR_GREEN "%s/%s-%s" ANSI_COLOR_RESET ":\n", PACKAGE->category, PACKAGE->name, PACKAGE->version);
+    printf(ANSI_BOLD " U \n" ANSI_COLOR_RESET);
+
+    struct winsize w;
+    ioctl(STDOUT_FILENO, TIOCGWINSZ, &w); // Get terminal width
 
     GHashTable *printed = g_hash_table_new(g_str_hash, g_str_equal); // Check if already printed but with + or -
     for (; active_iuse; active_iuse = active_iuse->next) {
         char *flag_name = (char *)active_iuse->data;
-        if (flag_name[0] == '+' || flag_name[0] == '-')
-            flag_name = flag_name + 1; // Move from +/-
         char *c;
         if ((c = strchr(flag_name, '\n')) != NULL) // I dunno how but on my system there's \n on test
             *c = '\0';
@@ -168,13 +212,29 @@ void parse_use() {
         if (descr == NULL)
             descr = alloc_str("<unknown>", NULL);
 
-        GSList *data;
-        if ( (data = g_slist_find_custom(active_use, flag_name, find_active_use)) != NULL) {
-            printf(ANSI_BOLD ANSI_COLOR_RED "%2c %-23s" ANSI_COLOR_RESET ": %s", ' ', flag_name, descr);
-        } else {
-            printf(ANSI_BOLD ANSI_COLOR_BLUE "%2c %-23s" ANSI_COLOR_RESET ": %s", ' ', flag_name, descr);
+        char *color = ANSI_BOLD ANSI_COLOR_BLUE;
+
+        char used = '-';
+        if (flag_name[0] == '+' || flag_name[0] == '-'){
+            if (flag_name[0] == '+') used = '+';
+            flag_name += 1; // Move from +/-
         }
-        printf("\n");
+
+        if (!PACKAGE->installed) {
+            if (used == '+') {
+                color = ANSI_BOLD ANSI_COLOR_RED;
+            }
+        } else {
+             if (g_slist_find_custom(active_use, flag_name, find_active_use) != NULL) {
+                 used = '+';
+             }
+             if (used == '+') {
+                 color = ANSI_BOLD ANSI_COLOR_RED;
+             }
+        }
+
+        printf(" %c ", used);
+        printf("%s" " %-*s" ANSI_COLOR_RESET ": %s\n", color, w.ws_col / 5, flag_name, descr); // ~1/5
         free(descr);
     }
 
