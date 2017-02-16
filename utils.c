@@ -3,43 +3,75 @@
 #include <stdlib.h>
 #include <ctype.h>
 #include <regex.h>
-#include <errno.h>
+#include <stdarg.h>
 
 #include "shared.h"
 
-size_t fsize(FILE *f) {
-    fseek(f, 0L, SEEK_END);
-    size_t fsize = ftell(f);
-    rewind(f);
-    return fsize + 1; // For \0
+#include "semver.h"
+#include "sds.h"
+
+char *find_max_version(sds *arr, sds package_name, unsigned int n) {
+    semver_t max = {};
+    unsigned int maxi;
+
+    for (int i = 0; i < n; i++) {
+        sds name = sdsdup(arr[i]);
+
+        char *c;
+        if ((c = strrchr(name, '.')) != NULL) // if has extension
+            sdsrange(name, 0, -(strlen(c) + 1));
+
+
+        sds version = sdsdup(name);
+        sdsrange(version, strlen(package_name) + 1, -1);
+
+        semver_t curr = {};
+        semver_parse(version, &curr);
+
+        if (semver_gt(curr, max)) {
+            max = curr;
+            maxi = i;
+        }
+        sdsfree(name);
+        sdsfree(version);
+    }
+
+    return arr[maxi];
 }
 
-void *alloc_str(const char *first, ...) {
+// Allocate a string and read to it from file
+char *read_file_content(FILE *f) {
+    fseek(f, 0L, SEEK_END);
+    long long fsize = ftell(f);
+    rewind(f);
+    char *ret = calloc(fsize + 1, sizeof(char));
+
+    if (!ret) {
+        perror("Memory allocation for file failed in read_file_content");
+        printf("Trying to allocate %lli bytes\n", fsize);
+        exit(1);
+    }
+
+    fread(ret, 1, fsize, f);
+    return ret;
+}
+
+sds alloc_str(const sds first, ...) {
     va_list ap;
 
-    char *res = malloc(sizeof(char) * (strlen(first) + 1));
-    memcpy(res, first, strlen(first) + 1);
+    sds res = sdsnew(first);
 
     va_start(ap, first);
     char *s;
 
-    while ( (s = va_arg(ap, char*)) != NULL ) {
-        res = realloc(res, sizeof(char) * (strlen(res) + strlen(s) + 1));
-        strcat(res, s);
-    }
+    while ( (s = va_arg(ap, sds)) != NULL )
+        res = sdscat(res, s);
+
+    va_end(ap);
     return res;
 }
 
-void compress_spaces(char *str) {
-    char *dst = str;
-    for (; *str; ++str) {
-        *dst++ = *str;
-
-        if (isspace(*str)) {
-            do ++str;
-            while (isspace(*str));
-            --str;
-        }
-    }
-    *dst = 0;
+void compress_spaces(char *s) {
+    char *d = s;
+    do while(*s == '\t' || (isspace(*s) && isspace(*(s + 1)))) {s++; *s=' ';} while((*d++ = *s++));
 }

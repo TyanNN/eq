@@ -2,6 +2,7 @@
 #define H_EQU_SHARED
 
 #include <stdbool.h>
+#include <sds.h>
 
 #define ANSI_COLOR_RED      "\x1b[31m"
 #define ANSI_COLOR_GREEN    "\x1b[32m"
@@ -19,10 +20,10 @@ const char* LAYMAN_EBUILDS_DIR = "/var/lib/layman";
 #endif
 
 typedef struct {
-    char *name;
-    char *version;
-    char *category;
-    char *repository;
+    sds name;
+    sds version;
+    sds category;
+    sds repository;
     bool installed;
 } package_info_t;
 

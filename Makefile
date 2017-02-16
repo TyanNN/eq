@@ -1,5 +1,4 @@
-CFLAGS = `xml2-config --cflags --libs` `pkg-config --cflags --libs glib-2.0`
-FILES = main.c utils.c use.c
-
+EXT_LIBS = `pkg-config --cflags --libs glib-2.0` `pkg-config --cflags --libs libxml-2.0`
+LIBS = lib/semver.c lib/sds.c
 all:
-	clang $(CFLAGS) $(FILES) -Iinclude -o eq
+	clang ${EXT_LIBS} ${LIBS} -Ilib -Iinclude *.c -o eq -g

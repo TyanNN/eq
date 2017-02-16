@@ -1,7 +1,9 @@
 #ifndef H_EQU_UTILS
 #define H_EQU_UTILS
 
-size_t fsize(FILE*);
+char *find_max_version(char **arr, char *package_name, unsigned int n);
+
+char *read_file_content(FILE* f);
 
 // Allocate a string, must end with NULL
 void *alloc_str(const char *first, ...);
