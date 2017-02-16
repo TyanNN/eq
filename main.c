@@ -25,9 +25,9 @@ char *SEARCHED_PACKAGE = NULL;
 char *PACKAGE_INFO_DIR = NULL;
 
 int search_by_partial_name(const char *fpath, const struct stat *sb, int tflag, struct FTW *ftwbuf) {
-    if (tflag == FTW_D){
-        if (strncmp(fpath + ftwbuf->base, SEARCHED_PACKAGE, strlen(SEARCHED_PACKAGE)) == 0) {
-            sds name = sdsnew(basename((char *)fpath));
+    if (tflag == FTW_D) {
+        sds name = sdsnew(basename((char *)fpath));
+        if (strncmp(name, SEARCHED_PACKAGE, strlen(SEARCHED_PACKAGE)) == 0) {
             sds version = sdsempty();
 
             sds *tokens;
@@ -48,10 +48,9 @@ int search_by_partial_name(const char *fpath, const struct stat *sb, int tflag, 
 
             if (strcmp(name, SEARCHED_PACKAGE) == 0) {
                 PACKAGE->installed = true;
-
                 PACKAGE->name = name;
-
                 PACKAGE->category = sdsnew(fpath);
+
                 sdsrange(PACKAGE->category, strlen(PORTAGE_EBUILDS_DIR), -(strlen(basename((char *)fpath)) + 2));
 
                 PACKAGE->version = version;
@@ -59,14 +58,16 @@ int search_by_partial_name(const char *fpath, const struct stat *sb, int tflag, 
 
                 return 1;
             }
+            sdsfree(version);
         }
+        sdsfree(name);
     }
 
     return 0;
 }
 
 int search_by_partial_name_not_installed(const char *fpath, const struct stat *sb, int tflag, struct FTW *ftwbuf) {
-    if (tflag == FTW_D && ftwbuf->level <= 2){
+    if (tflag == FTW_D && ftwbuf->level <= 2) {
         if (strcmp(fpath + ftwbuf->base, SEARCHED_PACKAGE) == 0) { // Strict name
             PACKAGE->installed = false;
 
@@ -98,12 +99,10 @@ int search_by_partial_name_not_installed(const char *fpath, const struct stat *s
 
             sds eb = find_max_version(ebs, SEARCHED_PACKAGE, curr_el);
 
-            PACKAGE->name = sdsempty();
-            PACKAGE->name = sdscpy(PACKAGE->name, eb);
+            PACKAGE->name = sdsdup(eb);
             sdsrange(PACKAGE->name, 0, strlen(SEARCHED_PACKAGE) - 1); // minus version
 
-            PACKAGE->version = sdsempty();
-            PACKAGE->version = sdscpy(PACKAGE->version, eb);
+            PACKAGE->version = sdsdup(eb);
             sdsrange(PACKAGE->version, strlen(PACKAGE->name) + 1, -(7 + 1)); // len .ebuild + end of str
 
             PACKAGE_INFO_DIR = sdsnew(fpath);
@@ -120,6 +119,52 @@ int search_by_partial_name_not_installed(const char *fpath, const struct stat *s
     return 0;
 }
 
+void parse_full_name(sds name) {
+    sdsrange(name, 1, -1);
+
+    sds category = sdsdup(name);
+    char *c = strrchr(category, '/');
+    sdsrange(category, 0, -(strlen(c) + 1));
+
+    PACKAGE->category = sdsdup(category);
+
+    sds *tokens;
+    int count;
+
+    bool was = false;
+    tokens = sdssplitlen(name, sdslen(name), "-", 1, &count);
+    sds version = sdsempty();
+    for (int i = 1; i < count; i++) {
+        if isdigit(tokens[i][0])
+            was = true;
+        if (was == true)
+            version = sdscatprintf(version, "-%s", tokens[i]);
+    }
+    sdsfreesplitres(tokens, count);
+
+    sdsrange(version, 1, -1);
+    sdsrange(name, 0, -(sdslen(version) + 2));
+
+    sds pname = name;
+    sdsrange(pname, strlen(category) + 1, -1);
+
+    PACKAGE->name = sdsdup(name);
+    PACKAGE->version = sdsdup(version);
+
+    char *ckpth = alloc_str(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, NULL);
+    if (access(ckpth, F_OK) != -1) {
+        PACKAGE->installed = true;
+        PACKAGE_INFO_DIR = sdsdup(ckpth);
+    } else {
+        PACKAGE->installed = false; // TODO
+        PACKAGE_INFO_DIR = sdsempty();
+        PACKAGE_INFO_DIR = sdscatprintf(PACKAGE_INFO_DIR, "%s/%s/%s", PORTAGE_EBUILDS_DIR, PACKAGE->category, PACKAGE->name);
+    }
+
+    sdsfree(ckpth);
+    sdsfree(version);
+}
+
 void search_package(sds name) {
     SEARCHED_PACKAGE = name;
     PACKAGE = malloc(sizeof(package_info_t));
@@ -130,52 +175,7 @@ void search_package(sds name) {
         if (PACKAGE->name == NULL)
             nftw(PORTAGE_EBUILDS_DIR, search_by_partial_name_not_installed, 100, 0);
     } else { // =category/name-version
-        sdsrange(name, 1, -1);
-
-        sds category = sdsdup(name);
-        char *c = strrchr(category, '/');
-        sdsrange(category, 0, -(strlen(c) + 1));
-
-
-        PACKAGE->category = sdsempty();
-        PACKAGE->category = sdscpy(PACKAGE->category, category);
-
-        sds *tokens;
-        int count;
-
-        bool was = false;
-        tokens = sdssplitlen(name, sdslen(name), "-", 1, &count);
-        sds version = sdsempty();
-        for (int i = 1; i < count; i++) {
-            if isdigit(tokens[i][0])
-                was = true;
-            if (was == true)
-                version = sdscatprintf(version, "-%s", tokens[i]);
-        }
-        sdsfreesplitres(tokens, count);
-
-        sdsrange(version, 1, -1);
-        sdsrange(name, 0, -(sdslen(version) + 2));
-
-        sds pname = sdsdup(name);
-        sdsrange(pname, strlen(category) + 1, -1);
-
-        PACKAGE->name = sdsempty();
-        PACKAGE->name = sdscpy(PACKAGE->name, pname);
-        PACKAGE->version = sdsempty();
-        PACKAGE->version = sdscpy(PACKAGE->version, version);
-
-        char *ckpth = alloc_str(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, NULL);
-        if (access(ckpth, F_OK) != -1) {
-            PACKAGE->installed = true;
-            PACKAGE_INFO_DIR = sdsdup(ckpth);
-        } else {
-            PACKAGE->installed = false; // TODO
-            PACKAGE_INFO_DIR = sdsempty();
-            PACKAGE_INFO_DIR = sdscatprintf(PACKAGE_INFO_DIR, "%s/%s/%s", PORTAGE_EBUILDS_DIR, PACKAGE->category, PACKAGE->name);
-        }
-
-        sdsfree(ckpth);
+        parse_full_name(name);
     }
 
     if (PACKAGE->name == NULL) { // nfound
@@ -199,7 +199,7 @@ void search_package(sds name) {
         PACKAGE->repository = sdsnew("gentoo"); // TODO: Handle overlays
 
         char *tmpparent = strrchr(PACKAGE_INFO_DIR, '/');
-        sds parent = sdsnew(PACKAGE_INFO_DIR);
+        sds parent = sdsdup(PACKAGE_INFO_DIR);
         sdsrange(parent, 0, -(strlen(tmpparent) + 1));
 
         PACKAGE->category = sdsdup(parent);
@@ -214,13 +214,17 @@ int main(int argc, char **argv) {
         printf(ANSI_BOLD "u" ANSI_COLOR_RESET " - show use flags\n");
         return 1;
     }
-    search_package(argv[2]);
+
+    sds cat = sdsnew(argv[2]);
+    search_package(cat);
 
     if (strcmp(argv[1], "uses") == 0 || strcmp(argv[1], "u") == 0) {
         parse_use();
     } else {
         printf("Unknown command");
     }
+
+    sdsfree(cat);
 
     sdsfree(PACKAGE->name);
     sdsfree(PACKAGE->version);

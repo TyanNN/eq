@@ -43,11 +43,8 @@ void parse_desc(sds path) {
             int cs;
             sds *this_line = sdssplitlen(tokens[i], sdslen(tokens[i]), " - ", 3, &cs);
 
-            char *use_flag_s = this_line[0];
-            char *use_text_s = this_line[1];
-
-            sds use_flag = sdsnew(use_flag_s);
-            sds use_text = sdsnew(use_text_s);
+            sds use_flag = sdsnew(this_line[0]);
+            sds use_text = sdsnew(this_line[1]);
 
             if (strstr(path, "use.desc") == NULL) {
                 sds flname = sdsnew(basename(path));
@@ -92,7 +89,9 @@ void parse_use() {
     struct dirent *el;
     while ((el = readdir(desc_dir)) != NULL) {
         if (strcmp(el->d_name, ".") != 0 && strcmp(el->d_name, "..") != 0) {
-            parse_desc(alloc_str("/usr/portage/profiles/desc/", el->d_name, NULL));
+            sds tmpp = alloc_str("/usr/portage/profiles/desc/", el->d_name, NULL);
+            parse_desc(tmpp);
+            sdsfree(tmpp);
         }
     }
     closedir(desc_dir);
@@ -106,7 +105,7 @@ void parse_use() {
 
     // Per-package use flags descriptions
     sds pth = alloc_str(dir, "/", PACKAGE->category, "/", PACKAGE->name, "/metadata.xml", NULL);
-    xmlDocPtr doc;
+    xmlDocPtr doc = NULL;
 
     if (access(pth, F_OK) != -1) {
         doc = xmlParseFile(pth);
@@ -139,7 +138,8 @@ void parse_use() {
         xmlXPathFreeContext(context);
         xmlXPathFreeObject(uses);
     }
-    xmlFreeDoc(doc);
+    if (doc != NULL)
+        xmlFreeDoc(doc);
 
     sdsfree(pth);
     sdsfree(dir);
