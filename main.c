@@ -11,6 +11,8 @@
 #include <unistd.h>
 
 #include "use.h"
+#include "belongs.h"
+
 #include "utils.h"
 #include "shared.h"
 
@@ -18,8 +20,6 @@
 
 extern const char *PORTAGE_DB_DIR;
 extern const char *PORTAGE_EBUILDS_DIR;
-
-extern char *strndup(const char *, unsigned long); // It seems like gcc can't find it by itself
 
 char *SEARCHED_PACKAGE = NULL;
 char *PACKAGE_INFO_DIR = NULL;
@@ -210,29 +210,38 @@ void search_package(sds name) {
 
 int main(int argc, char **argv) {
     if (argc < 3) {
-        printf("Usage: %s " ANSI_BOLD "<command> <package-name>\n" ANSI_COLOR_RESET, argv[0]);
-        printf(ANSI_BOLD "u" ANSI_COLOR_RESET " - show use flags\n");
+        printf(ANSI_BOLD "Usage:" ANSI_COLOR_CYAN " %s " ANSI_COLOR_GREEN "<command> <package-name>\n" ANSI_COLOR_RESET, argv[0]);
+
+        const char *const options[]   =   { "(u)ses", "(b)elongs" };
+        const char *const expls[]     =   { "show use flags", "find a package <file> belongs to" };
+
+        for (int i = 0; i < sizeof(options) / sizeof(char*); i++) {
+            printf(ANSI_BOLD " %-15s" ANSI_COLOR_RESET "%s\n", options[i], expls[i]);
+        }
+
         return 1;
     }
 
-    sds cat = sdsnew(argv[2]);
-    search_package(cat);
-
     if (strcmp(argv[1], "uses") == 0 || strcmp(argv[1], "u") == 0) {
+        sds cat = sdsnew(argv[2]);
+        search_package(cat);
+
         parse_use();
+
+        sdsfree(cat);
+
+        sdsfree(PACKAGE->name);
+        sdsfree(PACKAGE->version);
+        sdsfree(PACKAGE->category);
+        sdsfree(PACKAGE->repository);
+        free(PACKAGE);
+
+        sdsfree(PACKAGE_INFO_DIR);
+    } else if ((strcmp(argv[1], "belongs") == 0 || strcmp(argv[1], "b") == 0)) {
+        belongs_to(argv[2]);
     } else {
         printf("Unknown command");
     }
-
-    sdsfree(cat);
-
-    sdsfree(PACKAGE->name);
-    sdsfree(PACKAGE->version);
-    sdsfree(PACKAGE->category);
-    sdsfree(PACKAGE->repository);
-    free(PACKAGE);
-
-    sdsfree(PACKAGE_INFO_DIR);
 
     return 0;
 }
