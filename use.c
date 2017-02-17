@@ -15,6 +15,7 @@
 #include "shared.h"
 
 #include "sds.h"
+#include "ebuild_parser.h"
 
 extern const char *PORTAGE_DB_DIR;
 extern const char *PORTAGE_EBUILDS_DIR;
@@ -126,7 +127,7 @@ void parse_use() {
                     continue;
 
                 compress_spaces(use_text);
-                sdstrim(use_text, "\n\t");
+                sdstrim(use_text, "\n\t ");
 
                 g_hash_table_insert(ALL_USE, use_flag, use_text);
 
@@ -197,43 +198,17 @@ void parse_use() {
                         "/", PACKAGE->name, "/", PACKAGE->name, "-", PACKAGE->version, ".ebuild", NULL));
         }
         FILE *eb_f = fopen(eb_path, "r");
-        sds eb_s = sdsnew(read_file_content(eb_f));
+        char **flags;
+        size_t fl_len;
+        parse_iuse(eb_f, &flags, &fl_len);
         fclose(eb_f);
         sdsfree(eb_path);
 
-        char *token = strstr(eb_s, "IUSE=");
-        while (token != NULL) {
-            unsigned long int cap = 5;
-            unsigned int n = 0;
-
-            sds iuses = sdsempty();
-            for (int i = 7; i < strlen(token); i++) { // IUSE="
-               if (token[i] != '\"') {
-                   iuses = sdscatprintf(iuses, "%c", token[i]);
-               }
-            }
-
-            sdstrim(iuses, "\n\t");
-            compress_spaces(iuses);
-
-            char *chr;
-            for(int i = 0; i < strlen(iuses); i++) {
-                if (isalnum(iuses[i]) || iuses[i] == '+' || iuses[i] == '-') {
-                    chr = &iuses[i];
-                    break;
-                }
-            }
-
-            char *tt = strtok(iuses, " ");
-            while (tt != NULL) {
-                active_iuse = g_slist_append(active_iuse, tt);
-                tt = strtok(NULL, " ");
-            }
-
-            token = strstr(token + strlen(iuses), "IUSE");
-            sdsfree(iuses);
+        for (int i = 0; i < fl_len; i++) {
+            sds tmp = sdsnew(flags[i]);
+            sdstrim(tmp, "\t ");
+            active_iuse = g_slist_append(active_iuse, tmp);
         }
-        sdsfree(eb_s);
     }
 
     printf("Use flags for " ANSI_BOLD ANSI_COLOR_GREEN "%s/%s-%s" ANSI_COLOR_RESET ":\n", PACKAGE->category, PACKAGE->name, PACKAGE->version);
@@ -264,7 +239,7 @@ void parse_use() {
 
         sds descr = g_hash_table_lookup(ALL_USE, flag_name);
         if (descr == NULL)
-            descr = alloc_str("<unknown>", NULL);
+            descr = sdsnew("<unknown>");
 
         if (!PACKAGE->installed) {
             if (used == '+') {
