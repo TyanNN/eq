@@ -209,6 +209,7 @@ void parse_use() {
             sdstrim(tmp, "\t ");
             active_iuse = g_slist_append(active_iuse, tmp);
         }
+        free(flags);
     }
 
     printf("Use flags for " ANSI_BOLD ANSI_COLOR_GREEN "%s/%s-%s" ANSI_COLOR_RESET ":\n", PACKAGE->category, PACKAGE->name, PACKAGE->version);
@@ -256,8 +257,6 @@ void parse_use() {
 
         printf(" %c ", used);
         printf("%s" " %-*s" ANSI_COLOR_RESET ": %s\n", color, w.ws_col / 5, flag_name, descr); // ~1/5
-
-        sdsfree(descr);
     }
 
     g_hash_table_destroy(printed);

@@ -32,6 +32,11 @@ int parse_iuse(FILE *f, char ***arr, size_t *el_count) {
     if (el_count == NULL)
         el_count = 0;
 
+    if (f == NULL) {
+        perror("Error opening file");
+        return -1;
+    }
+
     *arr = malloc(sizeof(char *) * cap);
 
     ssize_t llen;
@@ -47,7 +52,7 @@ int parse_iuse(FILE *f, char ***arr, size_t *el_count) {
                 assert((iuse_start + move_chars)[0] == '\"');
             }
 
-            char *flags = malloc(sizeof(char) * ((llen - move_chars) + 1));
+            char *flags = calloc((llen - move_chars) + 1, sizeof(char));
             if (iuse_ended == IUSE_NOT_STARTED || iuse_ended == IUSE_ENDED) {
                 memcpy(flags, iuse_start + move_chars + 1, sizeof(char) * ((llen - move_chars) - 2)); // no newline and first "
             } else {
