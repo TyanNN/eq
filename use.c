@@ -14,7 +14,6 @@
 #include "utils.h"
 #include "shared.h"
 
-#include "sds.h"
 #include "ebuild_parser.h"
 
 extern const char *PORTAGE_DB_DIR;
@@ -23,44 +22,29 @@ extern const char *LAYMAN_EBUILDS_DIR;
 
 GHashTable *ALL_USE;
 
-void parse_desc(sds path) {
-    FILE *f = fopen(path, "r");
+void parse_desc(char *path) {
+    char *st;
+    g_file_get_contents(path, &st, NULL, NULL);
 
-    if (f == NULL) {
-        perror("I/O ERROR: Cant open desc file");
-        return;
-    }
+    char **tokens = g_strsplit(st, "\n", 0);
 
-    char *chr = read_file_content(f);
-    sds st = sdsnew(chr);
-    fclose(f);
+    for (int i = 0; i < g_strv_length(tokens); i++) {
+        if (!g_str_has_prefix(tokens[i], "#") && strlen(tokens[i]) > 2) { // Ignore comments
+            char **this_line = g_strsplit(tokens[i], "-", 0);
+            char *use_flag = g_strndup(this_line[0], strlen(this_line[0]) - 1);
+            char *use_text = g_strstrip(g_strjoinv("-", this_line + 1));
 
-    int count;
-
-    sds *tokens = sdssplitlen(st, sdslen(st), "\n", 1, &count);
-
-    for (int i = 0; i < count; i++) {
-        if (tokens[i][0] != '#' && sdslen(tokens[i]) > 2) {
-            int cs;
-            sds *this_line = sdssplitlen(tokens[i], sdslen(tokens[i]), " - ", 3, &cs);
-
-            sds use_flag = sdsnew(this_line[0]);
-            sds use_text = sdsnew(this_line[1]);
-
-            if (strstr(path, "use.desc") == NULL) {
-                sds flname = sdsnew(basename(path));
-                sdsrange(flname, 0, -(5 + 1)); // .desc
-                use_flag = sdscatprintf(flname, "_%s", use_flag);
+            if (!g_str_has_suffix(path, "use.desc")) {
+                char *filename = g_strndup(basename(path), strlen(basename(path)) - 5); // .desc
+                use_flag = g_strconcat(filename, "_", use_flag, NULL);
+                free(filename);
             }
             g_hash_table_insert(ALL_USE, use_flag, use_text);
-
-            sdsfreesplitres(this_line, cs);
+            g_strfreev(this_line);
         }
     }
-    sdsfreesplitres(tokens, count);
-
-    sdsfree(st);
-    free(chr);
+    free(st);
+    g_strfreev(tokens);
 }
 
 int find_active_use(const void *el, const void *tofind) {
@@ -72,7 +56,7 @@ int find_active_use(const void *el, const void *tofind) {
 }
 
 void destr_keys(void *k) {
-    sdsfree((sds)k);
+    free((char *)k);
 }
 
 // TODO: do something with use expand
@@ -90,22 +74,22 @@ void parse_use() {
     struct dirent *el;
     while ((el = readdir(desc_dir)) != NULL) {
         if (strcmp(el->d_name, ".") != 0 && strcmp(el->d_name, "..") != 0) {
-            sds tmpp = alloc_str("/usr/portage/profiles/desc/", el->d_name, NULL);
+            char *tmpp = g_strconcat("/usr/portage/profiles/desc/", el->d_name, NULL);
             parse_desc(tmpp);
-            sdsfree(tmpp);
+            free(tmpp);
         }
     }
     closedir(desc_dir);
 
-    sds dir;
+    char *dir;
     if (strcmp(PACKAGE->repository, "gentoo") == 0) {
-        dir = alloc_str(PORTAGE_EBUILDS_DIR, NULL); // From portage tree
+        dir = g_strconcat(PORTAGE_EBUILDS_DIR, NULL); // From portage tree
     } else {
-        dir = alloc_str(LAYMAN_EBUILDS_DIR, "/", PACKAGE->repository, NULL); // From overlay
+        dir = g_strconcat(LAYMAN_EBUILDS_DIR, "/", PACKAGE->repository, NULL); // From overlay
     }
 
     // Per-package use flags descriptions
-    sds pth = alloc_str(dir, "/", PACKAGE->category, "/", PACKAGE->name, "/metadata.xml", NULL);
+    char *pth = g_strconcat(dir, "/", PACKAGE->category, "/", PACKAGE->name, "/metadata.xml", NULL);
     xmlDocPtr doc = NULL;
 
     if (access(pth, F_OK) != -1) {
@@ -119,15 +103,15 @@ void parse_use() {
                 xmlNodePtr curr = uses->nodesetval->nodeTab[i];
 
                 xmlChar *sut = xmlNodeListGetString(doc, curr->xmlChildrenNode, true);
-                sds use_text = sdsnew((char *)sut);
+                char *use_text = g_strdup((char *)sut);
                 xmlChar *suf = xmlGetProp(curr, (xmlChar *)"name");
-                sds use_flag = sdsnew((char *)suf);
+                char *use_flag = g_strdup((char *)suf);
 
                 if (use_flag == NULL || use_text == NULL)
                     continue;
 
                 compress_spaces(use_text);
-                sdstrim(use_text, "\n\t ");
+                use_text = g_strstrip(use_text);
 
                 g_hash_table_insert(ALL_USE, use_flag, use_text);
 
@@ -142,74 +126,56 @@ void parse_use() {
     if (doc != NULL)
         xmlFreeDoc(doc);
 
-    sdsfree(pth);
-    sdsfree(dir);
+    free(pth);
+    free(dir);
 
     if (PACKAGE->installed) {
-        sds active_use_pth = alloc_str(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, "/USE", NULL);
-        sds active_iuse_pth = alloc_str(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, "/IUSE", NULL);
+        char *active_use_pth = g_strconcat(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, "/USE", NULL);
+        char *active_iuse_pth = g_strconcat(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, "/IUSE", NULL);
 
-        FILE *active_use_file = fopen(active_use_pth, "r");
-        FILE *active_iuse_file = fopen(active_iuse_pth, "r");
+        char *active_use_s, *active_iuse_s;
+        g_file_get_contents(active_use_pth, &active_use_s, NULL, NULL);
+        g_file_get_contents(active_iuse_pth, &active_iuse_s, NULL, NULL);
 
-        char *aus = read_file_content(active_use_file);
-        char *ais = read_file_content(active_iuse_file);
+        free(active_use_pth);
+        free(active_iuse_pth);
 
-        sds active_use_s = sdsnew(aus);
-        sds active_iuse_s = sdsnew(ais);
-
-        fclose(active_use_file);
-        fclose(active_iuse_file);
-
-        sdsfree(active_use_pth);
-        sdsfree(active_iuse_pth);
-
-        sds *tokens;
-        int count;
-
-        tokens = sdssplitlen(active_use_s, sdslen(active_use_s), " ", 1, &count);
-        for (int i = 0; i < count; i++) {
-            if (sdslen(tokens[i]) > 1)
-                active_use = g_slist_append(active_use, sdsdup(tokens[i]));
+        char **tokens = g_strsplit(active_use_s, " ", 0);
+        for (int i = 0; i < g_strv_length(tokens); i++) {
+            if (strlen(tokens[i]) > 1) {
+                active_use = g_slist_append(active_use, g_strdup(tokens[i]));
+            }
         }
-        sdsfreesplitres(tokens, count);
+        g_strfreev(tokens);
 
-        sds *itokens;
-        int icount;
-
-        itokens = sdssplitlen(active_iuse_s, sdslen(active_iuse_s), " ", 1, &icount);
-        for (int i = 0; i < icount; i++) {
-            if (sdslen(itokens[i]) > 1)
-                active_iuse = g_slist_append(active_iuse, sdsdup(itokens[i]));
+        char **itokens = g_strsplit(active_iuse_s, " ", 0);
+        for (int i = 0; i < g_strv_length(itokens); i++) {
+            if (strlen(itokens[i]) > 1) {
+                active_iuse = g_slist_append(active_iuse, g_strdup(itokens[i]));
+            }
         }
-        sdsfreesplitres(itokens, icount);
+        g_strfreev(itokens);
 
-        sdsfree(active_use_s);
-        sdsfree(active_iuse_s);
-
-        free(aus);
-        free(ais);
+        free(active_use_s);
+        free(active_iuse_s);
     } else {
-        sds eb_path = sdsempty();
+        char *eb_path;
         if (strcmp(PACKAGE->repository, "gentoo") == 0) {
-            eb_path = sdscatprintf(eb_path, "%s", alloc_str(PORTAGE_EBUILDS_DIR,
-                        "/",
-                        PACKAGE->category,
-                        "/", PACKAGE->name, "/", PACKAGE->name, "-", PACKAGE->version, ".ebuild", NULL));
+            eb_path = g_strconcat(PORTAGE_EBUILDS_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "/", PACKAGE->name, "-", PACKAGE->version, ".ebuild", NULL);
         }
-        FILE *eb_f = fopen(eb_path, "r");
-        char **flags;
-        size_t fl_len;
-        parse_iuse(eb_f, &flags, &fl_len);
-        fclose(eb_f);
-        sdsfree(eb_path);
 
-        for (int i = 0; i < fl_len; i++) {
-            sds tmp = sdsnew(flags[i]);
-            sdstrim(tmp, "\t ");
+        FILE *eb_f = fopen(eb_path, "r");
+        GPtrArray *flags = g_ptr_array_new();
+        parse_iuse(eb_f, flags);
+        fclose(eb_f);
+        free(eb_path);
+
+        for (int i = 0; i < flags->len; i++) {
+            char *tmp = g_ptr_array_index(flags, i);
+            tmp = g_strchomp(tmp);
             active_iuse = g_slist_append(active_iuse, tmp);
         }
-        free(flags);
+        g_ptr_array_free(flags, true);
     }
 
     printf("Use flags for " ANSI_BOLD ANSI_COLOR_GREEN "%s/%s-%s" ANSI_COLOR_RESET ":\n", PACKAGE->category, PACKAGE->name, PACKAGE->version);
@@ -220,7 +186,7 @@ void parse_use() {
 
     GHashTable *printed = g_hash_table_new(g_str_hash, g_str_equal); // Check if already printed but with + or -
     for (; active_iuse; active_iuse = active_iuse->next) {
-        sds flag_name = (sds)active_iuse->data;
+        char *flag_name = active_iuse->data;
         char *c;
         if ((c = strchr(flag_name, '\n')) != NULL) // I dunno how but on my system there's \n on test
             *c = '\0';
@@ -235,12 +201,12 @@ void parse_use() {
         char used = '-';
         if (flag_name[0] == '+' || flag_name[0] == '-'){
             if (flag_name[0] == '+') used = '+';
-            sdsrange(flag_name, 1, -1); // Move from +/-
+            flag_name = flag_name + 1; // Move from +/-
         }
 
-        sds descr = g_hash_table_lookup(ALL_USE, flag_name);
+        char *descr = g_hash_table_lookup(ALL_USE, flag_name);
         if (descr == NULL)
-            descr = sdsnew("<unknown>");
+            descr = "<unknown>";
 
         if (!PACKAGE->installed) {
             if (used == '+') {

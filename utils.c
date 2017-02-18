@@ -7,23 +7,25 @@
 
 #include "shared.h"
 
-#include "semver.h"
-#include "sds.h"
+#include <glib.h>
 
-char *find_max_version(sds *arr, sds package_name, unsigned int n) {
+#include "semver.h"
+
+char *find_max_version(GPtrArray *arr, char *package_name) {
     semver_t max = {};
     unsigned int maxi;
 
-    for (int i = 0; i < n; i++) {
-        sds name = sdsdup(arr[i]);
+    char *name;
+    for (int i = 0; i < arr->len; i++) {
+        char *el = g_ptr_array_index(arr, i++);
+        char *has_ext = strrchr(el, '.');
 
-        char *c;
-        if ((c = strrchr(name, '.')) != NULL) // if has extension
-            sdsrange(name, 0, -(strlen(c) + 1));
-
-
-        sds version = sdsdup(name);
-        sdsrange(version, strlen(package_name) + 1, -1);
+        if (has_ext) {
+            name = g_strndup(el, strlen(el) - strlen(has_ext));
+        } else {
+            name = g_strdup(el);
+        }
+        char *version = g_strdup(name + strlen(package_name) + 1);
 
         semver_t curr = {};
         semver_parse(version, &curr);
@@ -32,15 +34,18 @@ char *find_max_version(sds *arr, sds package_name, unsigned int n) {
             max = curr;
             maxi = i;
         }
-        sdsfree(name);
-        sdsfree(version);
+
+        free(name);
+        free(version);
     }
 
-    return arr[maxi];
+    return g_ptr_array_index(arr, maxi);
 }
 
 // Allocate a string and read to it from file
 char *read_file_content(FILE *f) {
+    printf("REPLACE WITH GLIB FUNC");
+    exit(1);
     fseek(f, 0L, SEEK_END);
     long long fsize = ftell(f);
     rewind(f);
@@ -54,21 +59,6 @@ char *read_file_content(FILE *f) {
 
     fread(ret, 1, fsize, f);
     return ret;
-}
-
-sds alloc_str(const sds first, ...) {
-    va_list ap;
-
-    sds res = sdsnew(first);
-
-    va_start(ap, first);
-    char *s;
-
-    while ( (s = va_arg(ap, sds)) != NULL )
-        res = sdscat(res, s);
-
-    va_end(ap);
-    return res;
 }
 
 void compress_spaces(char *s) {

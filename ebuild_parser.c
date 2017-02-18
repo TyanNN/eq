@@ -5,6 +5,8 @@
 #include <assert.h>
 #include <ctype.h>
 
+#include <glib.h>
+
 typedef enum {
     IUSE_NOT_STARTED,
     IUSE_PARSING,
@@ -21,24 +23,13 @@ static bool isempty(const char *s) {
     return 1;
 }
 
-int parse_iuse(FILE *f, char ***arr, size_t *el_count) {
-    char *line;
-    size_t len;
-
-    *el_count = 0;
-
-    size_t cap = 3;
-
-    if (el_count == NULL)
-        el_count = 0;
-
+int parse_iuse(FILE *f, GPtrArray *arr) {
     if (f == NULL) {
         perror("Error opening file");
         return -1;
     }
-
-    *arr = malloc(sizeof(char *) * cap);
-
+    char *line;
+    size_t len;
     ssize_t llen;
     iuse_parse_state iuse_ended = IUSE_NOT_STARTED;
     while ((llen = getline(&line, &len, f)) != -1) {
@@ -71,20 +62,7 @@ int parse_iuse(FILE *f, char ***arr, size_t *el_count) {
                     iuse_ended = IUSE_PARSING;
                 }
 
-                if (++(*el_count) > cap) {
-                    cap *= 2;
-                    char **tmp = realloc(*arr, sizeof(char *) * cap);
-                    if (tmp == NULL) {
-                        free(tmp);
-                        perror("Failed to allocate memory for iuse");
-                        return -1;
-                    }
-
-                    *arr = tmp;
-                    (*arr)[*el_count - 1] = token;
-                } else {
-                    (*arr)[*el_count - 1] = token;
-                }
+                g_ptr_array_insert(arr, -1, g_strstrip(token));
             }
 
             free(flags);

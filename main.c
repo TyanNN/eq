@@ -10,13 +10,13 @@
 #include <libgen.h>
 #include <unistd.h>
 
+#include <glib.h>
+
 #include "use.h"
 #include "belongs.h"
 
 #include "utils.h"
 #include "shared.h"
-
-#include "sds.h"
 
 extern const char *PORTAGE_DB_DIR;
 extern const char *PORTAGE_EBUILDS_DIR;
@@ -26,41 +26,42 @@ char *PACKAGE_INFO_DIR = NULL;
 
 int search_by_partial_name(const char *fpath, const struct stat *sb, int tflag, struct FTW *ftwbuf) {
     if (tflag == FTW_D) {
-        sds name = sdsnew(basename((char *)fpath));
-        if (strncmp(name, SEARCHED_PACKAGE, strlen(SEARCHED_PACKAGE)) == 0) {
-            sds version = sdsempty();
+        if (ftwbuf->level == 2) {
+            char **path_tokens = g_strsplit(fpath + strlen(PORTAGE_DB_DIR) + 1, "/", 0);
+            char *category = path_tokens[0];
+            char *name = path_tokens[1];
+            if (strncmp(name, SEARCHED_PACKAGE, strlen(SEARCHED_PACKAGE)) == 0) {
+                char **tokens = g_strsplit(name, "-", 0);
+                int v_n;
+                for (int i = 0; i < g_strv_length(tokens); i++) {
+                    if (isdigit(tokens[i][0])) {
+                        v_n = i;
+                        break;
+                    }
+                }
+                char *version = g_strjoinv("-", tokens + v_n);
+                char *pname = g_strndup(name, strlen(name) - (strlen(version) + 1));
 
-            sds *tokens;
-            int count;
+                if (strcmp(pname, SEARCHED_PACKAGE) == 0) {
+                    PACKAGE->installed = true;
+                    PACKAGE->name = g_strdup(pname);
+                    PACKAGE->category = g_strndup(fpath + strlen(PORTAGE_EBUILDS_DIR), strlen(fpath + strlen(PORTAGE_EBUILDS_DIR)) - (strlen(name) + 1));
 
-            bool was = false;
-            tokens = sdssplitlen(name, sdslen(name), "-", 1, &count);
-            for (int i = 1; i < count; i++) {
-                if isdigit(tokens[i][0])
-                    was = true;
-                if (was == true)
-                    version = sdscatprintf(version, "-%s", tokens[i]);
+                    PACKAGE->version = g_strdup(version);
+                    PACKAGE_INFO_DIR = g_strdup(fpath);
+
+                    g_strfreev(tokens);
+                    free(version);
+                    free(pname);
+
+                    return 1;
+                }
+                g_strfreev(tokens);
+                free(version);
+                free(pname);
             }
-            sdsfreesplitres(tokens, count);
-
-            sdsrange(version, 1, -1);
-            sdsrange(name, 0, -(sdslen(version) + 2));
-
-            if (strcmp(name, SEARCHED_PACKAGE) == 0) {
-                PACKAGE->installed = true;
-                PACKAGE->name = name;
-                PACKAGE->category = sdsnew(fpath);
-
-                sdsrange(PACKAGE->category, strlen(PORTAGE_EBUILDS_DIR), -(strlen(basename((char *)fpath)) + 2));
-
-                PACKAGE->version = version;
-                PACKAGE_INFO_DIR = sdsnew(fpath);
-
-                return 1;
-            }
-            sdsfree(version);
+            g_strfreev(path_tokens);
         }
-        sdsfree(name);
     }
 
     return 0;
@@ -76,42 +77,25 @@ int search_by_partial_name_not_installed(const char *fpath, const struct stat *s
 
             unsigned int cap = 5;
             unsigned int curr_el = 0;
-            sds *ebs = malloc(sizeof(sds) * cap);
+            GPtrArray *ebs = g_ptr_array_new();
 
             while ((el = readdir(dir)) != NULL) {
-                if (strstr(el->d_name, ".ebuild") != NULL) {
-                    if (++curr_el > cap) {
-                        cap *= 2;
-                        sds *tmp = realloc(ebs, sizeof(sds) * cap);
-                        if (tmp) {
-                            ebs = tmp;
-                            ebs[curr_el - 1] = sdsnew(el->d_name);
-                        } else {
-                            free(ebs);
-                            perror("Cannot realloc ebuild array");
-                            exit(1);
-                        }
-                    } else {
-                        ebs[curr_el - 1] = sdsnew(el->d_name);
-                    }
+                if (g_str_has_suffix(el->d_name, ".ebuild")) {
+                    g_ptr_array_insert(ebs, -1, el->d_name);
                 }
             }
 
-            sds eb = find_max_version(ebs, SEARCHED_PACKAGE, curr_el);
+            char *eb = find_max_version(ebs, SEARCHED_PACKAGE);
 
-            PACKAGE->name = sdsdup(eb);
-            sdsrange(PACKAGE->name, 0, strlen(SEARCHED_PACKAGE) - 1); // minus version
+            PACKAGE->name = g_strndup(eb, strlen(SEARCHED_PACKAGE)); // minus version
 
-            PACKAGE->version = sdsdup(eb);
-            sdsrange(PACKAGE->version, strlen(PACKAGE->name) + 1, -(7 + 1)); // len .ebuild + end of str
+            PACKAGE->version = g_strndup(eb + strlen(PACKAGE->name) + 1, strlen(eb + strlen(PACKAGE->name) + 1) - 7); // len .ebuild
 
-            PACKAGE_INFO_DIR = sdsnew(fpath);
+            PACKAGE_INFO_DIR = g_strdup(fpath);
 
             closedir(dir);
 
-            for(int i = 0; i < curr_el; i++)
-                sdsfree(ebs[i]);
-            free(ebs);
+            g_ptr_array_free(ebs, true);
 
             return 1;
         }
@@ -119,53 +103,40 @@ int search_by_partial_name_not_installed(const char *fpath, const struct stat *s
     return 0;
 }
 
-void parse_full_name(sds name) {
-    sdsrange(name, 1, -1);
+void parse_full_name(char *tname) {
+    char *name = tname + 1;
 
-    sds category = sdsdup(name);
-    char *c = strrchr(category, '/');
-    sdsrange(category, 0, -(strlen(c) + 1));
+    char *c = strrchr(name, '/');
+    PACKAGE->category  = g_strndup(name, strlen(name) - strlen(c));
 
-    PACKAGE->category = sdsdup(category);
+    char **tokens = g_strsplit(name, "-", 0);
 
-    sds *tokens;
-    int count;
-
-    bool was = false;
-    tokens = sdssplitlen(name, sdslen(name), "-", 1, &count);
-    sds version = sdsempty();
-    for (int i = 1; i < count; i++) {
-        if isdigit(tokens[i][0])
-            was = true;
-        if (was == true)
-            version = sdscatprintf(version, "-%s", tokens[i]);
+    unsigned int v_s = 0;
+    for (int i = 0; i < g_strv_length(tokens); i++) {
+        if isdigit(tokens[i][0]) {
+            v_s = i;
+            break;
+        }
     }
-    sdsfreesplitres(tokens, count);
 
-    sdsrange(version, 1, -1);
-    sdsrange(name, 0, -(sdslen(version) + 2));
+    PACKAGE->version = g_strjoinv("-", tokens + v_s);
+    g_strfreev(tokens);
 
-    sds pname = name;
-    sdsrange(pname, strlen(category) + 1, -1);
+    PACKAGE->name = g_strndup(name + strlen(PACKAGE->category) + 1, strlen(name + strlen(PACKAGE->category) + 1) - (strlen(PACKAGE->version) + 1));
 
-    PACKAGE->name = sdsdup(name);
-    PACKAGE->version = sdsdup(version);
-
-    char *ckpth = alloc_str(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, NULL);
+    char *ckpth = g_strconcat(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, NULL);
     if (access(ckpth, F_OK) != -1) {
         PACKAGE->installed = true;
-        PACKAGE_INFO_DIR = sdsdup(ckpth);
+        PACKAGE_INFO_DIR = g_strdup(ckpth);
     } else {
         PACKAGE->installed = false; // TODO
-        PACKAGE_INFO_DIR = sdsempty();
-        PACKAGE_INFO_DIR = sdscatprintf(PACKAGE_INFO_DIR, "%s/%s/%s", PORTAGE_EBUILDS_DIR, PACKAGE->category, PACKAGE->name);
+        PACKAGE_INFO_DIR = g_strconcat(PORTAGE_EBUILDS_DIR, "/", PACKAGE->category, "/", PACKAGE->name, NULL);
     }
 
-    sdsfree(ckpth);
-    sdsfree(version);
+    free(ckpth);
 }
 
-void search_package(sds name) {
+void search_package(char *name) {
     SEARCHED_PACKAGE = name;
     PACKAGE = malloc(sizeof(package_info_t));
     PACKAGE->name = NULL; // To check later
@@ -184,27 +155,18 @@ void search_package(sds name) {
     }
 
     if (PACKAGE->installed) {
-        sds tmprep = alloc_str(PACKAGE_INFO_DIR, "/repository", NULL);
-        FILE *repository = fopen(tmprep, "r");
+        char *rep_path = g_strconcat(PACKAGE_INFO_DIR, "/repository", NULL);
 
-        char *tmpcr = read_file_content(repository);
-        PACKAGE->repository = sdsnew(tmpcr);
-
-        sdstrim(PACKAGE->repository, "\n\t ");
-        fclose(repository);
-
-        sdsfree(tmprep);
-        free(tmpcr);
+        g_file_get_contents(rep_path, &PACKAGE->repository, NULL, NULL);
+        PACKAGE->repository = g_strchomp(PACKAGE->repository);
+        free(rep_path);
     } else {
-        PACKAGE->repository = sdsnew("gentoo"); // TODO: Handle overlays
+        PACKAGE->repository = g_strdup("gentoo"); // TODO: Handle overlays
 
-        char *tmpparent = strrchr(PACKAGE_INFO_DIR, '/');
-        sds parent = sdsdup(PACKAGE_INFO_DIR);
-        sdsrange(parent, 0, -(strlen(tmpparent) + 1));
+        char *parent_dir = strrchr(PACKAGE_INFO_DIR, '/');
 
-        PACKAGE->category = sdsdup(parent);
-
-        sdsrange(PACKAGE->category, strlen(PORTAGE_EBUILDS_DIR) + 1, -1);
+        PACKAGE->category = g_strndup(PACKAGE_INFO_DIR + strlen(PORTAGE_EBUILDS_DIR) + 1,
+                strlen(PACKAGE_INFO_DIR + strlen(PORTAGE_EBUILDS_DIR) + 1) - strlen(parent_dir));
     }
 }
 
@@ -223,20 +185,17 @@ int main(int argc, char **argv) {
     }
 
     if (strcmp(argv[1], "uses") == 0 || strcmp(argv[1], "u") == 0) {
-        sds cat = sdsnew(argv[2]);
-        search_package(cat);
+        search_package(argv[2]);
 
         parse_use();
 
-        sdsfree(cat);
-
-        sdsfree(PACKAGE->name);
-        sdsfree(PACKAGE->version);
-        sdsfree(PACKAGE->category);
-        sdsfree(PACKAGE->repository);
+        free(PACKAGE->name);
+        free(PACKAGE->version);
+        free(PACKAGE->category);
+        free(PACKAGE->repository);
         free(PACKAGE);
-
-        sdsfree(PACKAGE_INFO_DIR);
+        
+        free(PACKAGE_INFO_DIR);
     } else if ((strcmp(argv[1], "belongs") == 0 || strcmp(argv[1], "b") == 0)) {
         belongs_to(argv[2]);
     } else {
