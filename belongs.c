@@ -26,11 +26,11 @@ int belongs_to_find(const char *fpath, const struct stat *sb, int tflag, struct 
         size_t len;
 
         while (getline(&line, &len, fs) != -1) {
-            if (strstr(basename(line), BELONGS_TO_SEARCHED_NAME)) {
+            if (strstr(line, BELONGS_TO_SEARCHED_NAME)) {
                 char *tm = g_strndup(line, strlen(line) - 1); // no newline
 
                 char **tokens = g_strsplit(line, " ", 0);
-                char *nd = tokens[1];
+                char *nd = g_strstrip(tokens[1]);
 
                 char *tmpp = g_strdup(fpath + strlen(PORTAGE_DB_DIR) + 1);
 

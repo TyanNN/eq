@@ -194,7 +194,7 @@ int main(int argc, char **argv) {
         free(PACKAGE->category);
         free(PACKAGE->repository);
         free(PACKAGE);
-        
+
         free(PACKAGE_INFO_DIR);
     } else if ((strcmp(argv[1], "belongs") == 0 || strcmp(argv[1], "b") == 0)) {
         belongs_to(argv[2]);
