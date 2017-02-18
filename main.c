@@ -14,6 +14,7 @@
 
 #include "use.h"
 #include "belongs.h"
+#include "meta.h"
 
 #include "utils.h"
 #include "shared.h"
@@ -174,8 +175,8 @@ int main(int argc, char **argv) {
     if (argc < 3) {
         printf(ANSI_BOLD "Usage:" ANSI_COLOR_CYAN " %s " ANSI_COLOR_GREEN "<command> <package-name>\n" ANSI_COLOR_RESET, argv[0]);
 
-        const char *const options[]   =   { "(u)ses", "(b)elongs" };
-        const char *const expls[]     =   { "show use flags", "find a package <file> belongs to" };
+        const char *const options[]   =   { "(u)ses", "(b)elongs", "(m)eta" };
+        const char *const expls[]     =   { "show use flags", "find a package <file> belongs to", "package metadata" };
 
         for (int i = 0; i < sizeof(options) / sizeof(char*); i++) {
             printf(ANSI_BOLD " %-15s" ANSI_COLOR_RESET "%s\n", options[i], expls[i]);
@@ -184,10 +185,18 @@ int main(int argc, char **argv) {
         return 1;
     }
 
-    if (strcmp(argv[1], "uses") == 0 || strcmp(argv[1], "u") == 0) {
+    if (strcmp(argv[1], "belongs") == 0 || strcmp(argv[1], "b") == 0) {
+        belongs_to(argv[2]);
+    } else {
         search_package(argv[2]);
 
-        parse_use();
+        if (strcmp(argv[1], "uses") == 0 || strcmp(argv[1], "u") == 0) {
+            parse_use();
+        } else if (strcmp(argv[1], "meta") == 0 || strcmp(argv[1], "m") == 0) {
+            meta();
+        } else {
+            printf("Unknown command\n");
+        }
 
         free(PACKAGE->name);
         free(PACKAGE->version);
@@ -196,10 +205,6 @@ int main(int argc, char **argv) {
         free(PACKAGE);
 
         free(PACKAGE_INFO_DIR);
-    } else if ((strcmp(argv[1], "belongs") == 0 || strcmp(argv[1], "b") == 0)) {
-        belongs_to(argv[2]);
-    } else {
-        printf("Unknown command");
     }
 
     return 0;

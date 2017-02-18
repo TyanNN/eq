@@ -20,6 +20,8 @@ extern const char *PORTAGE_DB_DIR;
 extern const char *PORTAGE_EBUILDS_DIR;
 extern const char *LAYMAN_EBUILDS_DIR;
 
+extern package_info_t *PACKAGE;
+
 GHashTable *ALL_USE;
 
 void parse_desc(char *path) {

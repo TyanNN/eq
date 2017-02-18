@@ -23,6 +23,43 @@ static bool isempty(const char *s) {
     return 1;
 }
 
+char *parse_homepage(FILE *f) {
+    size_t len;
+    ssize_t llen;
+    char *line;
+    while ((llen = getline(&line, &len, f)) != -1) {
+        if (g_str_has_prefix(line, "HOMEPAGE")) {
+            return g_strndup(line + 10, strlen(line + 10) - 2);
+        }
+    }
+    return NULL;
+}
+
+char *parse_license(FILE *f) {
+    size_t len;
+    ssize_t llen;
+    char *line;
+    while ((llen = getline(&line, &len, f)) != -1) {
+        if (g_str_has_prefix(line, "LICENSE")) {
+            return g_strndup(line + 9, strlen(line + 9) - 2);
+        }
+    }
+    return NULL;
+}
+
+char *parse_keywords(FILE *f) {
+    size_t len;
+    ssize_t llen;
+    char *line;
+    char *res = calloc(1, sizeof(char));
+    while ((llen = getline(&line, &len, f)) != -1) {
+        if (g_str_has_prefix(line, "KEYWORDS")) {
+            return g_strndup(line + 10, strlen(line + 10) - 2);
+        }
+    }
+    return NULL;
+}
+
 int parse_iuse(FILE *f, GPtrArray *arr) {
     if (f == NULL) {
         perror("Error opening file");
