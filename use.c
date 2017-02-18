@@ -50,11 +50,7 @@ void parse_desc(char *path) {
 }
 
 int find_active_use(const void *el, const void *tofind) {
-    if (strcmp((char *)el, (char *)tofind) == 0) {
-        return 0;
-    } else {
-        return 1;
-    }
+    return !strcmp((char *)el, (char *)tofind) ? 0 : 1;
 }
 
 void destr_keys(void *k) {
@@ -83,12 +79,8 @@ void parse_use() {
     }
     closedir(desc_dir);
 
-    char *dir;
-    if (strcmp(PACKAGE->repository, "gentoo") == 0) {
-        dir = g_strconcat(PORTAGE_EBUILDS_DIR, NULL); // From portage tree
-    } else {
-        dir = g_strconcat(LAYMAN_EBUILDS_DIR, "/", PACKAGE->repository, NULL); // From overlay
-    }
+    // From portage tree/overlay
+    char *dir = !strcmp(PACKAGE->repository, "gentoo") ? g_strconcat(PORTAGE_EBUILDS_DIR, NULL) : g_strconcat(LAYMAN_EBUILDS_DIR, "/", PACKAGE->repository, NULL);
 
     // Per-package use flags descriptions
     char *pth = g_strconcat(dir, "/", PACKAGE->category, "/", PACKAGE->name, "/metadata.xml", NULL);

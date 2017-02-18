@@ -15,12 +15,9 @@ extern const char *LAYMAN_EBUILDS_DIR;
 extern package_info_t *PACKAGE;
 
 void meta() {
-    char *maind;
-    if (strcmp(PACKAGE->repository, "gentoo") == 0) {
-        maind = g_strconcat(PORTAGE_EBUILDS_DIR, "/", PACKAGE->category, "/", PACKAGE->name, NULL); // From portage tree
-    } else {
-        maind = g_strconcat(LAYMAN_EBUILDS_DIR, "/", PACKAGE->repository, "/", PACKAGE->category, "/", PACKAGE->name, NULL); // From overlay
-    }
+    char *maind = !strcmp(PACKAGE->repository, "gentoo") ?
+        g_strconcat(PORTAGE_EBUILDS_DIR, "/", PACKAGE->category, "/", PACKAGE->name, NULL) :
+        g_strconcat(LAYMAN_EBUILDS_DIR, "/", PACKAGE->repository, "/", PACKAGE->category, "/", PACKAGE->name, NULL);
     char *pth = g_strconcat(maind, "/metadata.xml", NULL);
 
     char *maint_email = NULL, *maint_name = NULL;
