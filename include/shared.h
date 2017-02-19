@@ -1,5 +1,4 @@
-#ifndef H_EQU_SHARED
-#define H_EQU_SHARED
+#pragma once
 
 #include <stdbool.h>
 
@@ -27,5 +26,3 @@ typedef struct {
 } package_info_t;
 
 package_info_t *PACKAGE;
-
-#endif
