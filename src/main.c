@@ -9,6 +9,7 @@
 #include <ctype.h>
 #include <libgen.h>
 #include <unistd.h>
+#include <getopt.h>
 
 #include <glib.h>
 
@@ -171,40 +172,71 @@ void search_package(char *name) {
     }
 }
 
-int main(int argc, char **argv) {
-    if (argc < 3) {
-        printf(ANSI_BOLD "Usage:" ANSI_COLOR_CYAN " %s " ANSI_COLOR_GREEN "<command> <package-name>\n" ANSI_COLOR_RESET, argv[0]);
+void print_usage() {
+        printf(ANSI_BOLD "Usage:" ANSI_COLOR_CYAN " eq " ANSI_COLOR_GREEN "<command> <package-name>\n" ANSI_COLOR_RESET);
 
-        const char *const options[]   =   { "(u)ses", "(b)elongs", "(m)eta" };
-        const char *const expls[]     =   { "show use flags", "find a package <file> belongs to", "package metadata" };
+        static const char *const options[][2] = {
+            {"u", "uses"},
+            {"b", "belongs"},
+            {"m", "meta"}
+        };
+        static const char *const expls[] =  {
+            "show use flags",
+            "find a package <file> belongs to",
+            "package metadata"
+        };
 
-        for (int i = 0; i < sizeof(options) / sizeof(char*); i++) {
-            printf(ANSI_BOLD " %-15s" ANSI_COLOR_RESET "%s\n", options[i], expls[i]);
+        for (int i = 0; i < sizeof(options) / sizeof(char *[2]); i++) {
+            printf(ANSI_BOLD " -%-5s--%-15s" ANSI_COLOR_RESET "%s\n", options[i][0], options[i][1], expls[i]);
         }
+}
 
+int main(int argc, char **argv) {
+    int c;
+
+    static struct option long_options[] = {
+        {"uses", required_argument, 0, 'u'},
+        {"belongs", required_argument, 0, 'b'},
+        {"meta", required_argument, 0, 'm'},
+        {0, 0, 0, 0}
+    };
+    int option_index = 0;
+
+    c = getopt_long(argc, argv, "u:b:m:", long_options, &option_index);
+
+    if (c == -1) {
+        print_usage();
         return 1;
     }
 
-    if (strcmp(argv[1], "belongs") == 0 || strcmp(argv[1], "b") == 0) {
-        belongs_to(argv[2]);
-    } else {
-        search_package(argv[2]);
+    switch (c) {
+        case 'b':
+            belongs_to(optarg);
+            break;
+        case '?':
+            print_usage();
+            break;
+        default:
+            search_package(optarg);
 
-        if (strcmp(argv[1], "uses") == 0 || strcmp(argv[1], "u") == 0) {
-            parse_use();
-        } else if (strcmp(argv[1], "meta") == 0 || strcmp(argv[1], "m") == 0) {
-            meta();
-        } else {
-            printf("Unknown command\n");
-        }
+            switch (c) {
+                case 'u':
+                    parse_use();
+                    break;
+                case 'm':
+                    meta();
+                    break;
+            }
 
-        free(PACKAGE->name);
-        free(PACKAGE->version);
-        free(PACKAGE->category);
-        free(PACKAGE->repository);
-        free(PACKAGE);
+            free(PACKAGE->name);
+            free(PACKAGE->version);
+            free(PACKAGE->category);
+            free(PACKAGE->repository);
+            free(PACKAGE);
 
-        free(PACKAGE_INFO_DIR);
+            free(PACKAGE_INFO_DIR);
+
+            break;
     }
 
     return 0;

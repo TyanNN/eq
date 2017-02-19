@@ -1,6 +1,9 @@
-cmake_minimum_required(VERSION 2.8.9)
-project(eq)
 set(CMAKE_C_COMPILER clang)
+
+cmake_minimum_required(VERSION 2.8.9)
+project(eq C)
+
+add_definitions(-g)
 
 file(GLOB eq_SRC
     "src/*.c"
