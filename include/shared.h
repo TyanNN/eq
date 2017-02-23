@@ -22,6 +22,7 @@ typedef struct {
     char *version;
     char *category;
     char *repository;
+    char *info_dir;
     bool installed;
 } package_info_t;
 

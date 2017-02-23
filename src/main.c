@@ -16,6 +16,7 @@
 #include "use.h"
 #include "belongs.h"
 #include "meta.h"
+#include "size.h"
 
 #include "utils.h"
 #include "shared.h"
@@ -24,8 +25,6 @@ extern const char *PORTAGE_DB_DIR;
 extern const char *PORTAGE_EBUILDS_DIR;
 
 char *SEARCHED_PACKAGE = NULL;
-char *PACKAGE_INFO_DIR = NULL;
-
 int search_by_partial_name(const char *fpath, const struct stat *sb, int tflag, struct FTW *ftwbuf) {
     if (tflag == FTW_D) {
         if (ftwbuf->level == 2) {
@@ -50,7 +49,7 @@ int search_by_partial_name(const char *fpath, const struct stat *sb, int tflag, 
                     PACKAGE->category = g_strndup(fpath + strlen(PORTAGE_EBUILDS_DIR), strlen(fpath + strlen(PORTAGE_EBUILDS_DIR)) - (strlen(name) + 1));
 
                     PACKAGE->version = g_strdup(version);
-                    PACKAGE_INFO_DIR = g_strdup(fpath);
+                    PACKAGE->info_dir = g_strdup(fpath);
 
                     g_strfreev(tokens);
                     free(version);
@@ -93,7 +92,7 @@ int search_by_partial_name_not_installed(const char *fpath, const struct stat *s
 
             PACKAGE->version = g_strndup(eb + strlen(PACKAGE->name) + 1, strlen(eb + strlen(PACKAGE->name) + 1) - 7); // len .ebuild
 
-            PACKAGE_INFO_DIR = g_strdup(fpath);
+            PACKAGE->info_dir = g_strdup(fpath);
 
             closedir(dir);
 
@@ -129,10 +128,10 @@ void parse_full_name(char *tname) {
     char *ckpth = g_strconcat(PORTAGE_DB_DIR, "/", PACKAGE->category, "/", PACKAGE->name, "-", PACKAGE->version, NULL);
     if (access(ckpth, F_OK) != -1) {
         PACKAGE->installed = true;
-        PACKAGE_INFO_DIR = g_strdup(ckpth);
+        PACKAGE->info_dir = g_strdup(ckpth);
     } else {
         PACKAGE->installed = false; // TODO
-        PACKAGE_INFO_DIR = g_strconcat(PORTAGE_EBUILDS_DIR, "/", PACKAGE->category, "/", PACKAGE->name, NULL);
+        PACKAGE->info_dir = g_strconcat(PORTAGE_EBUILDS_DIR, "/", PACKAGE->category, "/", PACKAGE->name, NULL);
     }
 
     free(ckpth);
@@ -157,7 +156,7 @@ void search_package(char *name) {
     }
 
     if (PACKAGE->installed) {
-        char *rep_path = g_strconcat(PACKAGE_INFO_DIR, "/repository", NULL);
+        char *rep_path = g_strconcat(PACKAGE->info_dir, "/repository", NULL);
 
         g_file_get_contents(rep_path, &PACKAGE->repository, NULL, NULL);
         PACKAGE->repository = g_strchomp(PACKAGE->repository);
@@ -165,10 +164,10 @@ void search_package(char *name) {
     } else {
         PACKAGE->repository = g_strdup("gentoo"); // TODO: Handle overlays
 
-        char *parent_dir = strrchr(PACKAGE_INFO_DIR, '/');
+        char *parent_dir = strrchr(PACKAGE->info_dir, '/');
 
-        PACKAGE->category = g_strndup(PACKAGE_INFO_DIR + strlen(PORTAGE_EBUILDS_DIR) + 1,
-                strlen(PACKAGE_INFO_DIR + strlen(PORTAGE_EBUILDS_DIR) + 1) - strlen(parent_dir));
+        PACKAGE->category = g_strndup(PACKAGE->info_dir + strlen(PORTAGE_EBUILDS_DIR) + 1,
+                strlen(PACKAGE->info_dir + strlen(PORTAGE_EBUILDS_DIR) + 1) - strlen(parent_dir));
     }
 }
 
@@ -178,12 +177,14 @@ void print_usage() {
         static const char *const options[][2] = {
             {"u", "uses"},
             {"b", "belongs"},
-            {"m", "meta"}
+            {"m", "meta"},
+            {"s", "size"}
         };
         static const char *const expls[] =  {
             "show use flags",
             "find a package <file> belongs to",
-            "package metadata"
+            "package metadata",
+            "size of all files owned by package"
         };
 
         for (int i = 0; i < sizeof(options) / sizeof(char *[2]); i++) {
@@ -198,11 +199,12 @@ int main(int argc, char **argv) {
         {"uses", required_argument, 0, 'u'},
         {"belongs", required_argument, 0, 'b'},
         {"meta", required_argument, 0, 'm'},
+        {"size", required_argument, 0, 's'},
         {0, 0, 0, 0}
     };
     int option_index = 0;
 
-    c = getopt_long(argc, argv, "u:b:m:", long_options, &option_index);
+    c = getopt_long(argc, argv, "u:b:m:s:", long_options, &option_index);
 
     if (c == -1) {
         print_usage();
@@ -226,6 +228,9 @@ int main(int argc, char **argv) {
                 case 'm':
                     meta();
                     break;
+                case 's':
+                    size();
+                    break;
             }
 
             free(PACKAGE->name);
@@ -234,7 +239,7 @@ int main(int argc, char **argv) {
             free(PACKAGE->repository);
             free(PACKAGE);
 
-            free(PACKAGE_INFO_DIR);
+            free(PACKAGE->info_dir);
 
             break;
     }
