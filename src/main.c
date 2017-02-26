@@ -17,6 +17,7 @@
 #include "belongs.h"
 #include "meta.h"
 #include "size.h"
+#include "mergetime.h"
 
 #include "utils.h"
 #include "shared.h"
@@ -178,13 +179,15 @@ void print_usage() {
             {"u", "uses"},
             {"b", "belongs"},
             {"m", "meta"},
-            {"s", "size"}
+            {"s", "size"},
+            {"t", "time"}
         };
         static const char *const expls[] =  {
             "show use flags",
             "find a package <file> belongs to",
             "package metadata",
-            "size of all files owned by package"
+            "size of all files owned by package",
+            "Time spent building package"
         };
 
         for (int i = 0; i < sizeof(options) / sizeof(char *[2]); i++) {
@@ -200,11 +203,12 @@ int main(int argc, char **argv) {
         {"belongs", required_argument, 0, 'b'},
         {"meta", required_argument, 0, 'm'},
         {"size", required_argument, 0, 's'},
+        {"time", required_argument, 0, 't'},
         {0, 0, 0, 0}
     };
     int option_index = 0;
 
-    c = getopt_long(argc, argv, "u:b:m:s:", long_options, &option_index);
+    c = getopt_long(argc, argv, "u:b:t:m:s:", long_options, &option_index);
 
     if (c == -1) {
         print_usage();
@@ -214,6 +218,9 @@ int main(int argc, char **argv) {
     switch (c) {
         case 'b':
             belongs_to(optarg);
+            break;
+        case 't':
+            merge_time(optarg);
             break;
         case '?':
             print_usage();

@@ -12,9 +12,10 @@
 #define ANSI_BOLD           "\033[1m"
 
 #ifdef PORTAGE_DIRS
-const char* PORTAGE_DB_DIR = "/var/db/pkg"; // no / is important in these
-const char* PORTAGE_EBUILDS_DIR = "/usr/portage";
-const char* LAYMAN_EBUILDS_DIR = "/var/lib/layman";
+const char *PORTAGE_DB_DIR = "/var/db/pkg"; // no / is important in these
+const char *PORTAGE_EBUILDS_DIR = "/usr/portage";
+const char *LAYMAN_EBUILDS_DIR = "/var/lib/layman";
+const char *EMERGE_LOG_FILE = "/var/log/emerge.log";
 #endif
 
 typedef struct {
